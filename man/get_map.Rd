@@ -8,8 +8,8 @@ get_map(location = c(lon = -95.3632715, lat = 29.7632836), zoom = "auto",
   scale = "auto", maptype = c("terrain", "terrain-background", "satellite",
   "roadmap", "hybrid", "toner", "watercolor", "terrain-labels", "terrain-lines",
   "toner-2010", "toner-2011", "toner-background", "toner-hybrid",
-  "toner-labels", "toner-lines", "toner-lite"), source = c("google", "osm",
-  "stamen", "cloudmade"), force = ifelse(source == "google", TRUE, TRUE),
+  "toner-labels", "toner-lines", "toner-lite"), server = c("google", "osm",
+  "stamen", "cloudmade"), force = ifelse(server == "google", TRUE, TRUE),
   messaging = FALSE, urlonly = FALSE, filename = "ggmapTemp",
   crop = TRUE, color = c("color", "bw"), language = "en-EN", api_key)
 }
@@ -32,7 +32,7 @@ supported.}
 (google maps), "terrain", "watercolor", and "toner" (stamen maps), or a
 positive integer for cloudmade maps (see ?get_cloudmademap)}
 
-\item{source}{Google Maps ("google"), OpenStreetMap ("osm"), Stamen Maps
+\item{server}{Google Maps ("google"), OpenStreetMap ("osm"), Stamen Maps
 ("stamen"), or CloudMade maps ("cloudmade")}
 
 \item{force}{force new map (don't use archived version)}
@@ -74,7 +74,7 @@ ggmap(map)
 (map <- get_map(source = "osm"))
 (map <- get_map(source = "stamen", maptype = "watercolor"))
 
-map <- get_map(location = "texas", zoom = 6, source = "stamen")
+map <- get_map(location = "texas", zoom = 6, server = "stamen")
 ggmap(map, fullpage = TRUE)
 
 }

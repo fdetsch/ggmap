@@ -17,7 +17,7 @@
 #'   "terrain", "terrain-background", "satellite", "roadmap", and "hybrid"
 #'   (google maps), "terrain", "watercolor", and "toner" (stamen maps), or a
 #'   positive integer for cloudmade maps (see ?get_cloudmademap)
-#' @param source Google Maps ("google"), OpenStreetMap ("osm"), Stamen Maps
+#' @param server Google Maps ("google"), OpenStreetMap ("osm"), Stamen Maps
 #'   ("stamen"), or CloudMade maps ("cloudmade")
 #' @param force force new map (don't use archived version)
 #' @param messaging turn messaging on/off
@@ -47,7 +47,7 @@
 #' (map <- get_map(source = "osm"))
 #' (map <- get_map(source = "stamen", maptype = "watercolor"))
 #'
-#' map <- get_map(location = "texas", zoom = 6, source = "stamen")
+#' map <- get_map(location = "texas", zoom = 6, server = "stamen")
 #' ggmap(map, fullpage = TRUE)
 #'
 #' }
@@ -57,8 +57,8 @@ get_map <- function(
     "hybrid", "toner", "watercolor", "terrain-labels",
     "terrain-lines", "toner-2010", "toner-2011", "toner-background",
     "toner-hybrid", "toner-labels", "toner-lines", "toner-lite"),
-  source = c("google","osm","stamen","cloudmade"),
-  force = ifelse(source == "google", TRUE, TRUE), messaging = FALSE, urlonly = FALSE,
+  server = c("google","osm","stamen","cloudmade"),
+  force = ifelse(server == "google", TRUE, TRUE), messaging = FALSE, urlonly = FALSE,
   filename = "ggmapTemp",
   crop = TRUE, color = c("color","bw"), language = "en-EN",
   api_key
@@ -78,16 +78,16 @@ get_map <- function(
 
 
   # preliminary argument checking
-  source <- match.arg(source)
+  server <- match.arg(server)
   color <- match.arg(color)
   if(missing(maptype)){
-    if(source != "cloudmade"){
+    if(server != "cloudmade"){
       maptype <- "terrain"
     } else {
       maptype <- 1
     }
   }
-  if(source == "stamen"){
+  if(server == "stamen"){
     if(!(maptype %in% c("terrain","terrain-background","terrain-labels",
       "terrain-lines", "toner", "toner-2010", "toner-2011", "toner-background",
       "toner-hybrid", "toner-labels", "toner-lines", "toner-lite", "watercolor")))
@@ -96,7 +96,7 @@ get_map <- function(
         call. = FALSE)
     }
   }
-  if(source == "google" & (
+  if(server == "google" & (
     maptype %in% c("terrain-background","terrain-labels",
       "terrain-lines", "toner", "toner-2010", "toner-2011", "toner-background",
       "toner-hybrid", "toner-labels", "toner-lines", "toner-lite", "watercolor")
@@ -153,6 +153,11 @@ get_map <- function(
       names(location) <- c("left","bottom","right","top")
     }
   }
+  
+  if (location == "world") {
+    location_type <- location
+    location_stop <- FALSE
+  }
 
   if(location_stop){ # if not one of the above, error
     stop("improper location specification, see ?get_map.", call. = F)
@@ -181,14 +186,14 @@ get_map <- function(
 
   # compute scale when scale = "auto" (only for google/osm)
   if(scale == "auto"){
-  	if(source == "google") scale <- 2
-  	if(source == "osm") scale <- OSM_scale_lookup(zoom)
+  	if(server == "google") scale <- 2
+  	if(server == "osm") scale <- OSM_scale_lookup(zoom)
   }
 
 
 
   # google map
-  if(source == "google"){
+  if(server == "google"){
 
   	# if bounding box given
     if(location_type == "bbox"){
@@ -202,34 +207,65 @@ get_map <- function(
         lon = mean(location[c("left","right")]),
         lat = mean(location[c("bottom","top")])
       )
+    } else if (location_type == "world") {
+      location <- c(lon = 0, lat = 0)
     }
 
   	# get map
-    map <- get_googlemap(center = location, zoom = zoom, maptype = maptype,
-        scale = scale, messaging = messaging, urlonly = urlonly, force = force,
-        filename = filename, color = color, language = language)
+    map <- get_googlemap(center = location, maptype = maptype, scale = scale, 
+                         zoom = ifelse(location_type == "world", 1, zoom), 
+                         messaging = messaging, urlonly = urlonly, 
+                         force = force, filename = filename, color = color, 
+                         language = language)
 
+    if (location_type == "world") {
+      
+      ## remove black margins
+      user_bbox <- c(-85, -180, 85, 180)
+      location <- attr(map, "bb")
+      names(location) <- names(user_bbox) <- c("bottom", "left", "top", "right")
+      
+      mat <- as.matrix(map)
+      
+      mar <- apply(mat, 1, FUN = function(x) {
+        sum(x == "#000000") > (.5 * ncol(mat))
+      })
+      
+      map <- map[!mar, ]
+      class(map) <- c("ggmap", "raster")
+      attr(map, "bb") <- location
+    }
+    
     # crop when bounding box is provided
-    if(FALSE){
-    bb <- attr(map, "bb")
-    mbbox <- c(left = bb$ll.lon, bottom = bb$ll.lat, right = bb$ur.lon, top = bb$ur.lat)
-    size <- dim(map)
-    if(location_type == "bbox"){
-      slon <- seq(mbbox["left"], mbbox["right"], length.out = size[1])
-      slat <- seq(mbbox["top"], mbbox["bottom"], length.out = size[2])
+    if (crop & location_type %in% c("bbox", "world")) {
+      
+      if (location_type == "bbox") {
+        bb <- attr(map, "bb")
+        mbbox <- c(left = bb$ll.lon, bottom = bb$ll.lat, right = bb$ur.lon, top = bb$ur.lat)
+      } else {
+        mbbox <- attr(map, "bb")
+      }
+      
+      size <- dim(map)
 
+      slon <- seq(mbbox$left, mbbox$right, length.out = size[2])
+      slat <- seq(mbbox$top, mbbox$bottom, length.out = size[1])
+      
       keep_x_ndcs <- which(user_bbox["left"] <= slon & slon <= user_bbox["right"])
       keep_y_ndcs <- which(user_bbox["bottom"] <= slat & slat <= user_bbox["top"])
-
+      
       map <- map[keep_y_ndcs, keep_x_ndcs]
       class(map) <- c("ggmap","raster")
+      
       attr(map, "bb") <- data.frame(
-        ll.lat = user_bbox["bottom"], ll.lon = user_bbox["left"],
-        ur.lat = user_bbox["top"], ur.lon = user_bbox["right"]
+        ll.lat = slat[keep_y_ndcs][length(keep_y_ndcs)], 
+        ll.lon = slon[keep_x_ndcs][1], 
+        ur.lat = slat[keep_y_ndcs][1], 
+        ur.lon = slon[keep_x_ndcs][length(keep_x_ndcs)]
       )
+      
     }
-    }
-
+    
     # return map
     return(map)
   }
@@ -237,7 +273,7 @@ get_map <- function(
 
 
   # openstreetmap
-  if(source == "osm"){
+  if(server == "osm"){
 
   	if(location_type != "bbox"){
   	  # get bounding box
@@ -257,7 +293,7 @@ get_map <- function(
 
 
   # stamen map
-  if(source == "stamen"){
+  if(server == "stamen"){
   	if(location_type != "bbox"){
   	  # get bounding box
       gm <- get_googlemap(center = location, zoom = zoom,
@@ -276,7 +312,7 @@ get_map <- function(
 
 
   # cloudmade map
-  if(source == "cloudmade"){
+  if(server == "cloudmade"){
   	if(missing(api_key)) stop("an api key must be provided for cloudmade maps, see ?get_cloudmademap.",
   	  call. = FALSE)
 
